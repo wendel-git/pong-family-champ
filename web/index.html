@@ -308,7 +308,7 @@ function drawBoard(){
   let y=Math.max(24,H*0.07);
   text('🏆 Campeonato',W/2,y,COLOR.green,Math.min(26,W*0.06),'center'); y+=Math.min(40,H*0.07);
   // espaço disponível para as linhas das duas categorias
-  const footer=56, perSection=Math.max(1,Math.floor((H-y-footer-2*(rowH*2+10))/(2*rowH)));
+  const footer=84, perSection=Math.max(1,Math.floor((H-y-footer-2*(rowH*2+10))/(2*rowH)));
   const sections=[
     {cat:'1p', title:'1 vs COM · vale o título', color:COLOR.green},
     {cat:'2p', title:'2 Jogadores', color:COLOR.blue},
@@ -333,8 +333,8 @@ function drawBoard(){
     y+=10;
   }
   text(rankingSource==='supabase'?'Placar compartilhado entre todos que abrem o link':'Sem conexão: placar salvo só neste navegador',
-       W/2,H-40,COLOR.dim,12,'center');
-  text('Qualquer tecla volta ao menu',W/2,H-22,COLOR.dim,13,'center');
+       W/2,H-64,COLOR.dim,12,'center');
+  text('Qualquer tecla volta ao menu',W/2,H-44,COLOR.dim,13,'center');
 }
 function drawMenu(){
   let y=H*0.2;
