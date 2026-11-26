@@ -73,8 +73,12 @@ pong-familia/
 ├── pong.js             # versão para terminal (Node.js, sem dependências)
 ├── package.json        # atalho: npm start roda a versão de terminal
 ├── supabase/schema.sql # SQL que cria a tabela e a função do placar
-└── docs/TERMINAL.md    # explicação técnica da versão de terminal
+├── docs/TERMINAL.md    # explicação técnica da versão de terminal
+└── HISTORICO.md        # tudo o que foi feito, decidido e corrigido, em ordem
 ```
+
+O [`HISTORICO.md`](HISTORICO.md) registra o desenvolvimento passo a passo, feito com
+apoio de IA: pedidos, decisões, erros encontrados e como cada mudança foi testada.
 
 ## ⚙️ Como está montado
 
