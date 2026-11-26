@@ -324,6 +324,11 @@ function update(dt){
 // ---------- Desenho ----------
 function text(str,x,y,color,size=16,align='left'){
   ctx.fillStyle=color; ctx.font=`${size}px 'Courier New', monospace`; ctx.textAlign=align; ctx.textBaseline='middle';
+  // texto centralizado que não cabe na tela (ex.: celular) diminui até caber
+  if(align==='center'){
+    const max=W-16, w=ctx.measureText(str).width;
+    if(w>max){ ctx.font=`${Math.max(8,Math.floor(size*max/w))}px 'Courier New', monospace`; }
+  }
   ctx.fillText(str,x,y);
 }
 function draw(){
