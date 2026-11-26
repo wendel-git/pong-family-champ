@@ -75,19 +75,28 @@ const SND={
 };
 
 // ---------- Campeonato ----------
-// Cada partida terminada é gravada no Supabase (tabela pong_matches, via a função
-// record_pong_match, que valida a partida). O ranking de cada categoria vem da view
-// pong_ranking. Sem Supabase (ex.: arquivo aberto offline), as partidas ficam só
-// neste navegador e o ranking é calculado aqui mesmo.
-//   Categoria '1p' = 1 vs COM  -> quem tem mais vitórias aqui é o campeão.
-//   Categoria '2p' = 2 jogadores no mesmo teclado.
+// Cada partida terminada é gravada no Supabase (tabela pong_matches) pela função
+// record_pong_match, que aplica as regras: só 1 vs COM no Médio (Categoria 1) e no
+// Difícil (Categoria 2) contam, dentro do período e até o limite de partidas por dia.
+// Fácil é treino. 2 Jogadores tem um ranking à parte. Os rankings vêm da view
+// pong_ranking; as regras (período e limite) vêm da tabela pong_settings.
+// Sem Supabase (arquivo aberto offline), as partidas ficam só neste navegador.
 const SUPABASE_URL = 'https://pfxjocrjcplrufvrqmif.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBmeGpvY3JqY3BscnVmdnJxbWlmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTU2NDQyNDksImV4cCI6MjExMTIyMDI0OX0.yiF6t2-mxakZ101zNrsFfJg-zG9h6abMCse1aqa9oLU';
 
 const COMPUTER='Computador';
-const LOCAL_MATCHES_KEY='pong_matches_v2';
-let sbClient=null, ranking={'1p':[],'2p':[]}, rankingSource='local';
-let saveStatus=null, pendingMatch=null;   // saveStatus: 'salvando' | 'ok' | 'local' | 'erro'
+const LOCAL_MATCHES_KEY='pong_matches_v3';
+const BOARDS=[
+  {key:'medio',   title:'Categoria 1 · Médio',   short:'Cat. 1 · Médio',   diff:'Médio',   color:'#39d353'},
+  {key:'dificil', title:'Categoria 2 · Difícil', short:'Cat. 2 · Difícil', diff:'Difícil', color:'#4a9eff'},
+  {key:'2p',      title:'2 Jogadores · à parte', short:'2 Jogadores',      diff:null,      color:'#f2f2f2'},
+];
+const boardForDiff=d=>(BOARDS.find(b=>b.diff===d)||{}).key||null;   // 'medio' | 'dificil' | null (Fácil)
+let sbClient=null, ranking={medio:[],dificil:[],'2p':[]}, rankingSource='local';
+let rules={start_date:null,end_date:null,daily_limit:5};
+// saveStatus: 'salvando' | 'ok' | 'local' | 'erro' (sem conexão) | 'limite' (6ª partida do dia)
+let saveStatus=null, pendingMatch=null, lastResult=null, gameoverNotice='';
+let matchInfo=null;   // o que esta partida vale: {counts, board, played, limit} (só 1 vs COM)
 
 function localMatches(){
   try{ return JSON.parse(localStorage.getItem(LOCAL_MATCHES_KEY)||'[]'); }catch(e){ return []; }
@@ -97,61 +106,83 @@ function sortRanking(list){
   return list.slice().sort((a,b)=>b.wins-a.wins || a.games-b.games || a.name.localeCompare(b.name));
 }
 function rankingFromMatches(list){
-  const acc={'1p':new Map(),'2p':new Map()};
+  const acc={medio:new Map(),dificil:new Map(),'2p':new Map()};
   for(const m of list){
-    if(!acc[m.category]) continue;
+    const board = m.category==='2p' ? '2p' : (m.counts ? boardForDiff(m.difficulty) : null);
+    if(!board) continue;
     for(const name of [m.player1,m.player2]){
       const key=name.toLowerCase();
       if(key===COMPUTER.toLowerCase()) continue;
-      const r=acc[m.category].get(key)||{name,wins:0,games:0};
+      const r=acc[board].get(key)||{name,wins:0,games:0};
       r.name=name; r.games++; if(m.winner.toLowerCase()===key) r.wins++;
-      acc[m.category].set(key,r);
+      acc[board].set(key,r);
     }
   }
-  return {'1p':[...acc['1p'].values()],'2p':[...acc['2p'].values()]};
+  const out={}; for(const k in acc) out[k]=sortRanking([...acc[k].values()]); return out;
 }
 async function loadRanking(){
   if(SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase){
     try{
       if(!sbClient) sbClient=window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-      const {data,error}=await sbClient.from('pong_ranking').select('category,name,wins,games');
-      if(!error && data){
-        const next={'1p':[],'2p':[]};
-        data.forEach(r=>{ if(next[r.category]) next[r.category].push(r); });
-        ranking={'1p':sortRanking(next['1p']),'2p':sortRanking(next['2p'])};
-        rankingSource='supabase';
+      const [rk,st]=await Promise.all([
+        sbClient.from('pong_ranking').select('board,name,wins,games'),
+        sbClient.from('pong_settings').select('start_date,end_date,daily_limit').eq('id',1).maybeSingle(),
+      ]);
+      if(!rk.error && rk.data){
+        const next={medio:[],dificil:[],'2p':[]};
+        rk.data.forEach(r=>{ if(next[r.board]) next[r.board].push(r); });
+        for(const k in next) next[k]=sortRanking(next[k]);
+        ranking=next; rankingSource='supabase';
+        if(!st.error && st.data) rules=st.data;
         return;
       }
     }catch(e){ /* sem internet: cai no modo local abaixo */ }
   }
-  const r=rankingFromMatches(localMatches());
-  ranking={'1p':sortRanking(r['1p']),'2p':sortRanking(r['2p'])};
+  ranking=rankingFromMatches(localMatches());
   rankingSource='local';
 }
+// Antes de começar uma partida de campeonato: quantas o jogador já fez hoje?
+// Devolve null se não deu para consultar (sem conexão).
+async function playerStatus(name,diffName){
+  if(!sbClient) return null;
+  try{
+    const {data,error}=await sbClient.rpc('pong_player_status',{p_name:name,p_difficulty:diffName});
+    return error ? null : data;
+  }catch(e){ return null; }
+}
 async function recordMatch(m){
-  pendingMatch=m; saveStatus='salvando';
+  pendingMatch=m; saveStatus='salvando'; lastResult=null;
   if(sbClient){
     try{
-      const {error}=await sbClient.rpc('record_pong_match',{
+      const {data,error}=await sbClient.rpc('record_pong_match',{
         p_category:m.category, p_difficulty:m.difficulty,
         p_player1:m.player1, p_player2:m.player2, p_score1:m.score1, p_score2:m.score2});
-      if(error){ saveStatus='erro'; return; }
-      saveStatus='ok'; pendingMatch=null;
+      if(error){
+        if(/limite diário/i.test(error.message||'')){ saveStatus='limite'; pendingMatch=null; }
+        else saveStatus='erro';
+        return;
+      }
+      lastResult=data; saveStatus='ok'; pendingMatch=null;
       await loadRanking();
       return;
     }catch(e){ saveStatus='erro'; return; }
   }
   try{
     const list=localMatches();
-    list.push({...m, winner: m.score1>m.score2 ? m.player1 : m.player2});
+    const counts = m.category==='1p' && !!boardForDiff(m.difficulty);
+    list.push({...m, counts, winner: m.score1>m.score2 ? m.player1 : m.player2});
     localStorage.setItem(LOCAL_MATCHES_KEY, JSON.stringify(list));
-    saveStatus='local'; pendingMatch=null;
+    lastResult={counts}; saveStatus='local'; pendingMatch=null;
   }catch(e){ saveStatus='erro'; return; }
   await loadRanking();
 }
-// Líder do campeonato = mais vitórias no 1 vs COM (precisa ter ao menos 1 vitória)
-function leader(){ const top=ranking['1p'][0]; return top && top.wins>0 ? top : null; }
 function plural(n,word){ return `${n} ${word}${n===1?'':'s'}`; }
+function fmtDate(iso){ if(!iso) return ''; const [y,m,d]=String(iso).split('-'); return `${d}/${m}`; }
+function periodText(){
+  const lim=`${rules.daily_limit||5} partidas por dia em cada categoria`;
+  if(!rules.start_date) return `Período: a definir · ${lim}`;
+  return `Campeonato: ${fmtDate(rules.start_date)} a ${fmtDate(rules.end_date)} · ${lim}`;
+}
 loadRanking();
 // Releitura simples a cada 10s enquanto o menu está aberto, para ver vitórias dos outros.
 setInterval(()=>{ if(state==='menu') loadRanking(); }, 10000);
@@ -194,7 +225,7 @@ function resetBall(dirSign){
 function startMatch(){
   if(modeIdx===0){ diffIdx=menuIdx; p1.name=nameBuf[0]; p2.name=COMPUTER; }
   else { p1.name=nameBuf[0]; p2.name=nameBuf[1]; }
-  score={p1:0,p2:0}; paused=false; matchTime=0; saveStatus=null; pendingMatch=null; resetPaddles();
+  score={p1:0,p2:0}; paused=false; matchTime=0; saveStatus=null; pendingMatch=null; lastResult=null; gameoverNotice=''; resetPaddles();
   beginServe(Math.random()<0.5?-1:1);
 }
 function beginServe(dir){
@@ -303,97 +334,133 @@ function draw(){
   else drawMatch();
 }
 function drawBoard(){
-  const fs=Math.max(11,Math.min(16,W*0.035)), rowH=fs+11;
-  const left=Math.max(12,W*0.12), right=W-left;
-  let y=Math.max(24,H*0.07);
-  text('🏆 Campeonato',W/2,y,COLOR.green,Math.min(26,W*0.06),'center'); y+=Math.min(40,H*0.07);
-  // espaço disponível para as linhas das duas categorias
-  const footer=84, perSection=Math.max(1,Math.floor((H-y-footer-2*(rowH*2+10))/(2*rowH)));
-  const sections=[
-    {cat:'1p', title:'1 vs COM · vale o título', color:COLOR.green},
-    {cat:'2p', title:'2 Jogadores', color:COLOR.blue},
-  ];
-  for(const s of sections){
-    text(s.title,left,y,s.color,fs+1,'left'); y+=rowH;
+  const fs=Math.max(11,Math.min(16,W*0.035)), rowH=fs+10;
+  const left=Math.max(12,W*0.1), right=W-left;
+  let y=Math.max(24,H*0.06);
+  text('🏆 Campeonato',W/2,y,COLOR.green,Math.min(26,W*0.06),'center'); y+=Math.min(30,H*0.05);
+  text(periodText(),W/2,y,COLOR.dim,Math.min(12,W*0.028),'center'); y+=Math.min(30,H*0.05);
+  // linhas que cabem em cada uma das 3 seções
+  const footer=84, perSection=Math.max(1,Math.floor((H-y-footer-3*(rowH*2+6))/(3*rowH)));
+  for(const b of BOARDS){
+    text(b.title,left,y,b.color,fs+1,'left'); y+=rowH;
     ctx.strokeStyle=COLOR.dim; ctx.globalAlpha=0.6;
     ctx.beginPath(); ctx.moveTo(left,y-rowH/2+2); ctx.lineTo(right,y-rowH/2+2); ctx.stroke(); ctx.globalAlpha=1;
-    const list=ranking[s.cat];
+    const list=ranking[b.key]||[];
     if(!list.length){
-      text(s.cat==='1p'?'Ninguém jogou contra o COM ainda.':'Nenhuma partida entre jogadores ainda.',left,y,COLOR.dim,fs-1,'left');
+      text(b.key==='2p'?'Nenhuma partida entre jogadores ainda.':`Ninguém jogou no ${b.diff} ainda.`,left,y,COLOR.dim,fs-1,'left');
       y+=rowH;
     } else {
       list.slice(0,perSection).forEach((r,i)=>{
-        const pos=(s.cat==='1p' && r.wins>0) ? (['🥇','🥈','🥉'][i]||`${i+1}.`) : `${i+1}.`;
-        text(`${pos} ${r.name}`,left,y,(i===0&&r.wins>0)?s.color:COLOR.fg,fs,'left');
+        const pos=(b.key!=='2p' && r.wins>0) ? (['🥇','🥈','🥉'][i]||`${i+1}.`) : `${i+1}.`;
+        text(`${pos} ${r.name}`,left,y,(i===0&&r.wins>0)?b.color:COLOR.fg,fs,'left');
         text(`${plural(r.wins,'vitória')} · ${r.games} jog.`,right,y,COLOR.dim,fs-2,'right');
         y+=rowH;
       });
       if(list.length>perSection) { text(`+ ${list.length-perSection} jogador(es)`,left,y,COLOR.dim,fs-3,'left'); y+=rowH; }
     }
-    y+=10;
+    y+=6;
   }
-  text(rankingSource==='supabase'?'Placar compartilhado entre todos que abrem o link':'Sem conexão: placar salvo só neste navegador',
+  text(rankingSource==='supabase'?'Placar compartilhado entre todos que abrem o link · Fácil é treino e não conta':'Sem conexão: placar salvo só neste navegador',
        W/2,H-64,COLOR.dim,12,'center');
   text('Qualquer tecla volta ao menu',W/2,H-44,COLOR.dim,13,'center');
 }
+// Top 3 de uma categoria, numa coluna de largura w começando em x.
+function drawTop3(b,x,y,w,fs){
+  text(b.short,x+w/2,y,b.color,fs+1,'center'); y+=fs+8;
+  const list=(ranking[b.key]||[]).filter(r=>r.wins>0).slice(0,3);
+  if(!list.length){ text('ainda sem vencedores',x+w/2,y,COLOR.dim,fs-1,'center'); return y+(fs+7)*3; }
+  for(let i=0;i<3;i++){
+    const r=list[i];
+    if(r){
+      text(`${['🥇','🥈','🥉'][i]} ${r.name}`,x+8,y,i===0?b.color:COLOR.fg,fs,'left');
+      text(plural(r.wins,'vitória'),x+w-8,y,COLOR.dim,fs-2,'right');
+    }
+    y+=fs+7;
+  }
+  return y;
+}
 function drawMenu(){
-  let y=H*0.2;
-  text('P O N G',W/2,y,COLOR.green,Math.min(60,W*0.11),'center'); y+=44;
-  const lead=leader();
-  text(lead ? `🏆 Líder do campeonato: ${lead.name} (${plural(lead.wins,'vitória')} vs COM)`
-            : '🏆 Campeonato: quem vencer mais o COM leva o título',
-       W/2,y,COLOR.blue,Math.min(14,W*0.032),'center');
-  y+=40;
+  let y=Math.max(40,H*0.11);
+  text('P O N G',W/2,y,COLOR.green,Math.min(56,W*0.1),'center'); y+=Math.min(42,H*0.07);
+  // Top 3 de cada categoria do campeonato
+  const fs=Math.max(11,Math.min(14,W*0.032));
+  const champs=BOARDS.filter(b=>b.key!=='2p');
+  if(W>=560){
+    const colW=Math.min(280,(W-60)/2), gap=24, x0=(W-(2*colW+gap))/2;
+    const y1=drawTop3(champs[0],x0,y,colW,fs); drawTop3(champs[1],x0+colW+gap,y,colW,fs);
+    y=y1;
+  } else {
+    const colW=Math.min(300,W-24), x0=(W-colW)/2;
+    y=drawTop3(champs[0],x0,y,colW,fs); y+=4; y=drawTop3(champs[1],x0,y,colW,fs);
+  }
+  text(periodText(),W/2,y+2,COLOR.dim,Math.min(12,W*0.028),'center'); y+=Math.min(40,H*0.06);
   if(menuStage==='mode'){
-    text('Escolha o modo de jogo',W/2,y,COLOR.fg,17,'center'); y+=38;
+    text('Escolha o modo de jogo',W/2,y,COLOR.fg,17,'center'); y+=34;
     ['1 Jogador (vs Computador)','2 Jogadores (W/S × Setas)'].forEach((t,i)=>{
       const sel=i===modeIdx;
-      text(`${sel?'▶ ':'   '}${t}`,W/2,y,sel?COLOR.green:COLOR.dim,18,'center'); y+=32;
+      text(`${sel?'▶ ':'   '}${t}`,W/2,y,sel?COLOR.green:COLOR.dim,18,'center'); y+=30;
     });
-    y+=20; text('↑/↓ navegar · Enter confirmar · L placar completo',W/2,y,COLOR.dim,13,'center'); y+=22;
+    y+=14; text('↑/↓ navegar · Enter confirmar · L placar completo',W/2,y,COLOR.dim,13,'center'); y+=20;
     text(`M som: ${soundOn?'ligado':'desligado'}`,W/2,y,COLOR.blue,13,'center');
   } else if(menuStage==='difficulty'){
-    text('Escolha a dificuldade',W/2,y,COLOR.fg,17,'center'); y+=38;
+    text('Escolha a dificuldade',W/2,y,COLOR.fg,17,'center'); y+=34;
+    const tag=['treino, não conta','Categoria 1','Categoria 2'];
     DIFFS.forEach((d,i)=>{
       const sel=i===menuIdx;
-      text(`${sel?'▶ ':'   '}${i+1}. ${d.name}`,W/2,y,sel?COLOR.green:COLOR.dim,19,'center'); y+=32;
+      text(`${sel?'▶ ':'   '}${i+1}. ${d.name} · ${tag[i]}`,W/2,y,sel?COLOR.green:COLOR.dim,18,'center'); y+=30;
     });
-    y+=20; text('↑/↓ navegar · Enter confirmar · 1-3 atalho · Q voltar',W/2,y,COLOR.dim,13,'center');
-    y+=22; text('Depois você digita seu nome para valer no campeonato',W/2,y,COLOR.blue,13,'center');
+    y+=14; text('↑/↓ navegar · Enter confirmar · 1-3 atalho · Q voltar',W/2,y,COLOR.dim,13,'center');
   }
-  // menuStage 'names': a tela de nomes agora é o overlay HTML #nameOverlay (ver showNameOverlay),
-  // que cobre a tela inteira, então não há nada a desenhar aqui no canvas.
+  // menuStage 'names': a tela de nomes é o overlay HTML #nameOverlay, que cobre a tela.
 }
 function drawGameOver(){
   const won=score.p1>score.p2;
   const items=['Jogar de novo','Voltar ao menu'];
-  let y=H*0.28;
+  let y=H*0.26;
   text(won?`${p1.name} VENCEU!`:`${p2.name} VENCEU!`,W/2,y,won?COLOR.green:COLOR.blue,28,'center'); y+=44;
   text(`Placar final: ${score.p1} × ${score.p2}`,W/2,y,COLOR.fg,16,'center'); y+=24;
-  text(modeIdx===0?`1 vs COM · ${diff().name}`:'2 Jogadores',W/2,y,COLOR.dim,14,'center'); y+=26;
-  // situação do registro no campeonato
-  let msg='', col=COLOR.dim;
-  if(saveStatus==='salvando'){ msg='Registrando no campeonato…'; }
-  else if(saveStatus==='erro'){ msg='✖ Não deu para registrar. Aperte T para tentar de novo.'; col='#ff6b6b'; }
-  else if(saveStatus==='ok' || saveStatus==='local'){
-    msg = saveStatus==='ok' ? '✔ Partida registrada no campeonato' : '✔ Partida salva neste navegador (sem conexão)';
-    col=COLOR.green;
-    if(modeIdx===0 && score.p1>score.p2){
-      const i=ranking['1p'].findIndex(r=>r.name.toLowerCase()===p1.name.toLowerCase());
-      if(i>=0) msg+=` · ${ranking['1p'][i].name}: ${plural(ranking['1p'][i].wins,'vitória')} vs COM (${i+1}º lugar)`;
+  const board=modeIdx===0 ? BOARDS.find(b=>b.key===boardForDiff(diff().name)) : BOARDS[2];
+  text(modeIdx===0 ? (board?board.title:'Fácil · treino') : '2 Jogadores · à parte',W/2,y,COLOR.dim,14,'center'); y+=26;
+  // situação do registro
+  let msg='', col=COLOR.dim, fsz=Math.min(14,W*0.03);
+  if(saveStatus==='salvando'){ msg='Registrando…'; }
+  else if(saveStatus==='erro'){ msg='✖ Não deu para registrar (sem conexão?). Aperte T para tentar de novo.'; col='#ff6b6b'; }
+  else if(saveStatus==='limite'){ msg=`✖ Limite de ${rules.daily_limit} partidas de hoje já atingido: esta não contou.`; col='#ff6b6b'; }
+  else if(saveStatus==='local'){ msg='Sem conexão: partida salva só neste navegador.'; }
+  else if(saveStatus==='ok'){
+    if(modeIdx===1){ msg='✔ Registrada no ranking de 2 Jogadores'; col=COLOR.green; }
+    else if(!board){ msg='Treino: o Fácil não conta para o campeonato.'; }
+    else if(lastResult && !lastResult.counts){ msg='Fora do período do campeonato: contou só como treino.'; }
+    else {
+      col=COLOR.green;
+      msg=`✔ Valeu para a ${board.title} · partida ${lastResult.played_today} de ${lastResult.daily_limit} hoje`;
+      const list=ranking[board.key]||[];
+      const i=list.findIndex(r=>r.name.toLowerCase()===p1.name.toLowerCase());
+      if(i>=0) msg+=` · ${plural(list[i].wins,'vitória')} (${i+1}º lugar)`;
     }
   }
-  if(msg){ text(msg,W/2,y,col,Math.min(14,W*0.03),'center'); }
-  y+=34;
+  if(msg){ text(msg,W/2,y,col,fsz,'center'); }
+  y+=22;
+  if(gameoverNotice){ text(gameoverNotice,W/2,y,'#ff6b6b',fsz,'center'); }
+  y+=24;
   items.forEach((t,i)=>{
     const sel=i===endIdx;
     text(`${sel?'▶ ':'   '}${t}`,W/2,y,sel?COLOR.green:COLOR.dim,18,'center'); y+=32;
   });
   y+=16; text('↑/↓ escolher · Enter confirmar',W/2,y,COLOR.dim,13,'center');
 }
+// Texto do canto da partida: o que ela vale.
+function matchTag(){
+  if(modeIdx===1) return '2 Jogadores';
+  const b=BOARDS.find(x=>x.key===boardForDiff(diff().name));
+  if(!b) return 'Fácil · treino';
+  if(matchInfo && matchInfo.counts===false) return `${diff().name} · fora do período (treino)`;
+  if(matchInfo && matchInfo.played!=null) return `${b.short} · partida ${matchInfo.played+1}/${matchInfo.limit} hoje`;
+  return b.short;
+}
 function drawMatch(){
   text(`${p1.name.toUpperCase()} ${score.p1}  :  ${score.p2} ${p2.name.toUpperCase()}`,W/2,22,COLOR.fg,Math.min(20,W*0.045),'center');
-  text(modeIdx===0?`Nível: ${diff().name}`:'2 Jogadores',14,22,COLOR.dim,12,'left');
+  text(matchTag(),14,22,COLOR.dim,12,'left');
   text(`Som: ${soundOn?'ligado':'desligado'}`,W-14,22,COLOR.dim,12,'right');
   ctx.strokeStyle=COLOR.fg; ctx.globalAlpha=0.5;
   ctx.beginPath(); ctx.moveTo(0,fieldTop-6); ctx.lineTo(W,fieldTop-6); ctx.stroke();
@@ -432,9 +499,10 @@ function showNameOverlay(){
   const solo = modeIdx===0;
   overlayFrom = solo ? 'difficulty' : 'mode';
   nameTitle.textContent = solo ? 'Seu nome' : 'Nomes dos jogadores';
-  nameSub.textContent = solo
-    ? `1 vs COM · ${DIFFS[menuIdx].name} · esta categoria vale o título do campeonato`
-    : '2 Jogadores · categoria à parte do título';
+  const b = solo ? BOARDS.find(x=>x.key===boardForDiff(DIFFS[menuIdx].name)) : null;
+  nameSub.textContent = !solo ? '2 Jogadores · ranking à parte do campeonato'
+    : b ? `${b.title} · vale para o campeonato (${rules.daily_limit||5} partidas por dia)`
+        : 'Fácil · treino, não conta para o campeonato';
   name1Label.textContent = solo ? 'Jogador (W/S ou setas)' : 'Jogador 1 (W/S)';
   name2Label.style.display = name2Input.style.display = solo ? 'none' : '';
   name1Input.value=nameBuf[0]||''; name2Input.value=nameBuf[1]||'';
@@ -456,14 +524,46 @@ function nameProblem(n1,n2,solo){
   if(!solo && n1.toLowerCase()===n2.toLowerCase()) return 'Os dois jogadores precisam ter nomes diferentes.';
   return '';
 }
-function confirmNames(){
+// No 1 vs COM de campeonato (Médio/Difícil): confere se o jogador ainda tem partidas hoje.
+// Devolve {ok, msg, info}. Sem conexão deixa jogar; o banco confere de novo ao gravar.
+async function checkChampionship(name){
+  const diffName=DIFFS[menuIdx].name;
+  if(modeIdx!==0 || !boardForDiff(diffName)) return {ok:true, info:null};
+  const st=await playerStatus(name,diffName);
+  if(!st) return {ok:true, info:null};
+  const info={counts: !!(st.championship && st.in_period), played: st.played_today, limit: st.daily_limit};
+  if(info.counts && st.played_today>=st.daily_limit)
+    return {ok:false, info, msg:`${name} já jogou as ${st.daily_limit} partidas de hoje no ${diffName}. Volte amanhã ou treine no Fácil.`};
+  return {ok:true, info};
+}
+let checking=false;
+async function confirmNames(){
+  if(checking) return;
   const solo = modeIdx===0;
   const n1=(name1Input.value||'').trim(), n2=(name2Input.value||'').trim();
   const problem=nameProblem(n1,n2,solo);
   if(problem){ nameError.textContent=problem; (n1&&!solo&&!n2?name2Input:name1Input).focus(); return; }
+  matchInfo=null;
+  if(solo){
+    checking=true; nameError.textContent='Conferindo suas partidas de hoje…';
+    const res=await checkChampionship(n1);
+    checking=false;
+    if(!res.ok){ nameError.textContent=res.msg; return; }
+    nameError.textContent=''; matchInfo=res.info;
+  }
   nameBuf[0]=n1; if(!solo) nameBuf[1]=n2;
   try{ localStorage.setItem('pong_names',JSON.stringify(nameBuf)); }catch(e){}
   menuStage='mode'; hideNameOverlay(); startMatch();
+}
+// "Jogar de novo" também respeita o limite do dia.
+async function playAgain(){
+  if(checking) return;
+  if(modeIdx===0){
+    checking=true; const res=await checkChampionship(nameBuf[0]); checking=false;
+    if(!res.ok){ gameoverNotice=res.msg; return; }
+    matchInfo=res.info;
+  }
+  startMatch();
 }
 document.getElementById('startDuoBtn').addEventListener('click',confirmNames);
 document.getElementById('backDuoBtn').addEventListener('click',()=>{ menuStage=overlayFrom; hideNameOverlay(); });
@@ -525,9 +625,9 @@ function onKey(e,down){
   } else if(state==='gameover'){
     if(k==='arrowup'||k==='w'||k==='arrowdown'||k==='s') endIdx=(endIdx+1)%2;
     else if(k==='t' && saveStatus==='erro' && pendingMatch) recordMatch(pendingMatch);
-    else if(k==='r') startMatch();
+    else if(k==='r') playAgain();
     else if(k==='q') { state='menu'; menuStage='mode'; }
-    else if(k==='enter') endIdx===0 ? startMatch() : (state='menu', menuStage='mode');
+    else if(k==='enter') endIdx===0 ? playAgain() : (state='menu', menuStage='mode');
   }
 }
 window.addEventListener('keydown',e=>onKey(e,true));
