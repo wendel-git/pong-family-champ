@@ -14,11 +14,11 @@ você manda para os seus irmãos.
 Vence quem fizer **10 pontos** primeiro. A cada ponto a bola volta à velocidade inicial
 e acelera aos poucos (1,5× a cada 7 segundos, com um limite para não ficar impossível).
 
-No menu, escolha o modo:
+No menu, escolha o modo. Antes de cada partida aparece uma tela para digitar o nome;
+é esse nome que vai para o placar.
 
-- **1 Jogador:** você contra o computador, em Fácil, Médio ou Difícil.
-- **2 Jogadores:** dois no mesmo teclado. Aparece uma tela para digitar o nome de cada
-  um antes de começar.
+- **1 Jogador (1 vs COM):** você contra o computador, em Fácil, Médio ou Difícil.
+- **2 Jogadores:** dois no mesmo teclado, um com `W`/`S` e o outro com as setas.
 
 | Tecla | Ação |
 |---|---|
@@ -31,18 +31,24 @@ No menu, escolha o modo:
 | `M` | Ligar/desligar o som |
 | `Q` | Voltar ao menu |
 
-## 🏆 Placar do campeonato
+## 🏆 Campeonato
 
-Toda vitória fica gravada no banco de dados (Supabase) com o nome de quem venceu, e todo
-mundo que abre o link vê o mesmo placar. O maior campeão aparece no topo do menu, e a
-tecla **L** mostra a lista completa.
+O campeonato tem duas categorias, cada uma com o seu ranking:
 
-Duas observações:
+| Categoria | Conta para o título? |
+|---|---|
+| **1 vs COM** | **Sim.** Quem tiver mais vitórias contra o computador é o campeão. |
+| **2 Jogadores** | Não. É um ranking à parte, só pela diversão. |
 
-- Use sempre o **mesmo nome** para acumular vitórias ("Ana" e "ana" contam como pessoas
-  diferentes).
-- No modo 1 Jogador, as vitórias do computador também entram no placar, como
-  "Computador".
+- O líder do campeonato aparece no topo do menu. A tecla **L** mostra os dois rankings
+  completos, com vitórias e partidas jogadas de cada um.
+- Desempate: com o mesmo número de vitórias, fica na frente quem jogou menos partidas.
+- Toda partida terminada é gravada no banco de dados (Supabase), e todo mundo que abre
+  o link vê o mesmo placar.
+- Use sempre o **mesmo nome**. Maiúsculas não importam: "Ana" e "ana" são a mesma pessoa.
+- O computador não entra no ranking, e ninguém pode usar o nome "Computador".
+- Vitórias contra o COM valem o mesmo em qualquer dificuldade. A dificuldade de cada
+  partida fica gravada, caso vocês queiram mudar essa regra depois.
 
 ---
 
@@ -63,19 +69,21 @@ pong-familia/
 |---|---|
 | Código | GitHub: `wendel-git/pong-familia` |
 | Site | Vercel: projeto `pong-familia` (time NeuraLab), publicado a partir da pasta `web/` |
-| Placar | Supabase: projeto `pong-familia` (região São Paulo), tabela `pong_champions` |
+| Placar | Supabase: projeto `pong-familia` (região São Paulo): tabela `pong_matches` (uma linha por partida) e ranking `pong_ranking` |
 
 **Atualizar o jogo:** qualquer alteração enviada (`git push`) para a branch `main`
 publica uma nova versão no mesmo link, automaticamente, em menos de um minuto.
 
-**Segurança do placar:** o navegador só consegue *ler* a tabela e chamar a função
-`increment_pong_win`, que soma exatamente +1 vitória por vez. Ninguém consegue apagar
-ou inventar um placar pela API. A chave que aparece no código (`SUPABASE_ANON_KEY`) é
-pública por design; quem protege os dados são as regras do banco, em
-[`supabase/schema.sql`](supabase/schema.sql).
+**Segurança do placar:** o navegador só consegue *ler* as partidas e gravar uma partida
+nova pela função `record_pong_match`, que confere a categoria, os nomes e o placar
+(quem venceu precisa ter feito 10 pontos). Ninguém consegue apagar ou editar partidas
+pelo site. A chave que aparece no código (`SUPABASE_ANON_KEY`) é pública por design;
+quem protege os dados são as regras do banco, em [`supabase/schema.sql`](supabase/schema.sql).
 
-**Zerar o placar:** no painel do Supabase, abra o SQL Editor e rode
-`delete from public.pong_champions;`.
+**Ver todas as partidas:** no painel do Supabase, abra o Table Editor → `pong_matches`.
+
+**Zerar o campeonato:** no painel do Supabase, abra o SQL Editor e rode
+`truncate public.pong_matches restart identity;`.
 
 ---
 
