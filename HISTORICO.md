@@ -1,4 +1,4 @@
-# 📜 Histórico do projeto
+# 📜 Histórico do projeto · Pong Family Champ
 
 Registro de tudo o que foi feito neste projeto: o que foi pedido, o que foi decidido,
 o que deu errado e como cada coisa foi verificada. O projeto foi desenvolvido em
@@ -6,7 +6,8 @@ conversa com o **Claude (IA da Anthropic)**, com o autor dirigindo as decisões.
 
 **Como manter:** cada alteração nova ganha uma entrada no fim da
 [Linha do tempo](#-linha-do-tempo), com data, pedido, o que mudou e como foi testado.
-Horários no fuso de Manaus.
+Horários no fuso de Manaus. Até 26/11 o projeto se chamava `pong-familia`; as fases
+antigas mantêm os nomes da época.
 
 ---
 
@@ -14,10 +15,10 @@ Horários no fuso de Manaus.
 
 | Item | Situação |
 |---|---|
-| Jogo | https://pong-familia.vercel.app (público, sem login) |
-| Código | GitHub `wendel-git/pong-familia`, branch `main` |
-| Publicação | Vercel, projeto `pong-familia` (time NeuraLab). Cada envio para a `main` publica sozinho |
-| Banco | Supabase, projeto `pong-familia` (São Paulo): `pong_matches`, `pong_ranking`, `pong_settings` |
+| Jogo | https://pong-family-champ.vercel.app (público, sem login). O link antigo `pong-familia.vercel.app` continua funcionando |
+| Código | GitHub `wendel-git/pong-family-champ`, branch `main` |
+| Publicação | Vercel, projeto `pong-family-champ` (time NeuraLab). Cada envio para a `main` publica sozinho |
+| Banco | Supabase, projeto `pong-family-champ` (São Paulo): `pong_matches`, `pong_ranking`, `pong_settings` |
 | Campeonato | Período de **teste em 28/11 e 29/11**. Categoria 1 = Médio, Categoria 2 = Difícil, 5 partidas por dia em cada categoria. Fácil é treino |
 | Placar | Zerado em 26/11 |
 
@@ -163,6 +164,23 @@ para pedir aprovação, em vez de tentar contornar.
 - Mensagem de boas-vindas escrita para os irmãos, pedindo que joguem, se divirtam e
   atuem como testadores e críticos.
 - Criado este `HISTORICO.md`.
+
+### Fase 12 · Novo nome: pong-family-champ (26/11, ~12:10)
+**Pedido:** trocar todos os nomes para `pong-family-champ`.
+**Feito pela IA:**
+- projeto da Vercel renomeado;
+- novo link público `pong-family-champ.vercel.app`, testado sem login no navegador do
+  autor. O link antigo `pong-familia.vercel.app` continua abrindo o mesmo jogo, para não
+  quebrar quem já o recebeu;
+- nomes atualizados no README, neste histórico, no `package.json`, no `schema.sql` e no
+  título da aba do navegador.
+
+**Feito pelo autor** (as ferramentas da IA não têm permissão para isso):
+- renomear o repositório no GitHub;
+- renomear o projeto no painel do Supabase.
+
+O endereço do banco (`pfxjocrjcplrufvrqmif.supabase.co`) não muda com o nome, então o
+jogo não precisa de alteração.
 
 ---
 

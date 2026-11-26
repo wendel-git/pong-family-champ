@@ -1,5 +1,5 @@
 {
-  "name": "pong-terminal",
+  "name": "pong-family-champ",
   "version": "1.0.0",
   "description": "Jogo Pong completo para rodar no terminal, em Node.js puro (sem dependências).",
   "main": "pong.js",

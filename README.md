@@ -1,8 +1,8 @@
-# 🏓 Pong da Família
+# 🏓 Pong Family Champ
 
 Jogo Pong em JavaScript, com placar de campeonato compartilhado.
 
-🔗 **Jogue aqui:** https://pong-familia.vercel.app
+🔗 **Jogue aqui:** https://pong-family-champ.vercel.app
 
 Funciona em qualquer navegador, no PC ou no celular, sem instalar nada. É esse link que
 você manda para os seus irmãos.
@@ -68,7 +68,7 @@ O campeonato é no modo **1 vs COM**, com duas categorias e um campeão em cada:
 ## 🗂 O que tem neste repositório
 
 ```
-pong-familia/
+pong-family-champ/
 ├── web/index.html      # o jogo no navegador (é o que está publicado na Vercel)
 ├── pong.js             # versão para terminal (Node.js, sem dependências)
 ├── package.json        # atalho: npm start roda a versão de terminal
@@ -84,9 +84,9 @@ apoio de IA: pedidos, decisões, erros encontrados e como cada mudança foi test
 
 | Peça | Onde fica |
 |---|---|
-| Código | GitHub: `wendel-git/pong-familia` |
-| Site | Vercel: projeto `pong-familia` (time NeuraLab), publicado a partir da pasta `web/` |
-| Placar | Supabase: projeto `pong-familia` (região São Paulo): `pong_matches` (uma linha por partida, inclusive treinos), `pong_ranking` (rankings) e `pong_settings` (período e limite diário) |
+| Código | GitHub: `wendel-git/pong-family-champ` |
+| Site | Vercel: projeto `pong-family-champ` (time NeuraLab), publicado a partir da pasta `web/`. O link antigo `pong-familia.vercel.app` continua abrindo o mesmo jogo |
+| Placar | Supabase: projeto `pong-family-champ` (região São Paulo): `pong_matches` (uma linha por partida, inclusive treinos), `pong_ranking` (rankings) e `pong_settings` (período e limite diário) |
 
 **Atualizar o jogo:** qualquer alteração enviada (`git push`) para a branch `main`
 publica uma nova versão no mesmo link, automaticamente, em menos de um minuto.

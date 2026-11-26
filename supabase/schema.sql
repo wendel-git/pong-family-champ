@@ -1,5 +1,5 @@
 -- ============================================================
--- Pong da Família — banco do campeonato (Supabase)
+-- Pong Family Champ — banco do campeonato (Supabase)
 -- ============================================================
 -- Para recriar do zero: no painel do Supabase, abra o SQL Editor,
 -- cole este arquivo inteiro e clique em "Run".
