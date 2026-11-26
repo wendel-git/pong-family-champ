@@ -2,7 +2,7 @@
 
 Jogo Pong em JavaScript, com placar de campeonato compartilhado.
 
-🔗 **Jogue aqui:** https://pong-familia-neura-lab1.vercel.app
+🔗 **Jogue aqui:** https://pong-familia.vercel.app
 
 Funciona em qualquer navegador, no PC ou no celular, sem instalar nada. É esse link que
 você manda para os seus irmãos.
