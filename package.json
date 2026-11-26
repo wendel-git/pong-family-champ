@@ -1,0 +1,16 @@
+{
+  "name": "pong-terminal",
+  "version": "1.0.0",
+  "description": "Jogo Pong completo para rodar no terminal, em Node.js puro (sem dependências).",
+  "main": "pong.js",
+  "scripts": {
+    "start": "node pong.js",
+    "start:ascii": "node pong.js --ascii"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "keywords": ["pong", "terminal", "jogo", "node", "cli"],
+  "author": "",
+  "license": "MIT"
+}
